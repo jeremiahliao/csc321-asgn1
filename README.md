@@ -4,6 +4,9 @@
 
 Usage:
 
+`python main.py <file-path> <mode>`
+ - mode is either "cbc" or "ecb"
+
 *block_io.py*
 `convert_to_blocks(file: str) -> List[bytes]`
  - takes in a file, converts it into a list of blocks of size 128 bits (16 bytes)
