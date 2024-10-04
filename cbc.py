@@ -1,5 +1,10 @@
 from typing import List
 from Crypto.Cipher._mode_ecb import EcbMode
+from Crypto.Cipher import AES
+import os
+import urllib.parse
+
+BLOCK_SIZE = 16
 
 
 # blocks pasted in does not include header
@@ -28,3 +33,16 @@ def decrypt(blocks: List[bytes], cipher: EcbMode, iv: bytes) -> List[bytes]:
         prev_block = block
 
     return decrypted_blocks
+
+def pad(data: bytes) -> bytes:
+    padding = BLOCK_SIZE - (len(data) % BLOCK_SIZE)
+    return data + bytes([padding] * padding)
+
+def submit(input: str, key: bytes, iv: bytes) -> bytes:
+    encoded_input = urllib.parse.quote(input, safe='')
+    string = f"userid=456;userdata={encoded_input};session-id=31337"
+    pad_string = pad(string.encode())
+    blocks = [pad_string[i:i+BLOCK_SIZE] for i in range(0, len(pad_string), BLOCK_SIZE)]
+    cipher = AES.new(key, AES.MODE_ECB)
+    encrypted_blocks = encrypt(blocks, cipher, iv)
+    return b''.join(encrypted_blocks)
