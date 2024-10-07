@@ -1,92 +1,75 @@
-import urllib.parse
 import cbc
 from Crypto.Cipher import AES
-from Crypto import Random
 import os
-import urllib.parse
 
 BLOCK_SIZE = 16
-key = os.urandom(BLOCK_SIZE)
+key = os.urandom(32)
 iv = os.urandom(BLOCK_SIZE)
+cipher = AES.new(key, AES.MODE_ECB)
 
 def submit(user_input: str) -> bytes:
-    res = "userid=456; userdata=" + user_input + ";session-id=31337"
-    url_encode = urllib.parse.quote(res, ' /')
-    res_bytes = bytes(url_encode, 'utf-8')
-    padding = 16 - (len(res_bytes) % 16)
-    print(padding)
-    for i in range(padding):
-        res_bytes += bytes([padding])
+    res = "userid=456;userdata=" + user_input + ";session-id=31337"
+    res = res.replace(';', '%3B')
+    res = res.replace('=', '%3D')
+    res_bytes = bytes(res, 'utf-8')
+    print("plaintext:", res_bytes)
+
+    res_bytes = pad(res_bytes)
+
     # get block list
     block_list = []
-    for i in range(int(len(res_bytes)/16)):
-        block_list.append(res_bytes[i*16:i*16+16])
+    for i in range(0, len(res_bytes), BLOCK_SIZE):
+        block_list.append(res_bytes[i:i + BLOCK_SIZE])
     # encrypt
-    key = Random.get_random_bytes(32)
-    iv = Random.get_random_bytes(16)
-    cipher = AES.new(key, AES.MODE_ECB)
     encrypted = cbc.encrypt(block_list, cipher, iv)
     return b''.join(encrypted)
 
-def verify(ciphertext: bytes) -> bool:
-    block_list = [ciphertext[i:i + BLOCK_SIZE] for i in range(0, len(ciphertext), BLOCK_SIZE)]
-    cipher = AES.new(key, AES.MODE_ECB)
+
+def verify(encrypted: bytes) -> bool:
+    block_list = [encrypted[i:i + BLOCK_SIZE] for i in range(0, len(encrypted), BLOCK_SIZE)]
     decrypted_blocks = cbc.decrypt(block_list, cipher, iv)
     decrypted = b''.join(decrypted_blocks)
-    try:
-        decrypted = unpad(decrypted).decode('utf-8')
-    except ValueError:
-        return False
-
-    if ";admin=true;" in decrypted:
+    decrypted_unpad = unpad(decrypted)
+    if b';admin=true;' in decrypted_unpad:
         return True
     return False
+
 
 def pad(data: bytes) -> bytes:
     padding = BLOCK_SIZE - (len(data) % BLOCK_SIZE)
     return data + bytes([padding] * padding)
 
+
 def unpad(data: bytes) -> bytes:
     padding = data[-1]
-    return data[:-padding]
+    if padding < BLOCK_SIZE:
+        return data[:-padding]
+    return data
 
-def xor(block: bytes, previous: bytes) -> bytes:
-    result = []
-    for i in range(len(block)):
-        result.append(block[i] ^ previous[i])
-    return bytes(result)
-
-def bitflip_attack(ciphertext: bytes) -> bytes:
-    # tried using xor helper function to swap per block
-    # goal of this was to swap the userid portion of the string to ";admin=true;"
-    flipped = bytearray(ciphertext)
-    flipped[16 + 0] ^= ord('u') ^ ord(';')
-    flipped[16 + 1] ^= ord('s') ^ ord('a')
-    flipped[16 + 2] ^= ord('e') ^ ord('d')
-    flipped[16 + 3] ^= ord('r') ^ ord('m')
-    flipped[16 + 4] ^= ord('i') ^ ord('i')
-    flipped[16 + 5] ^= ord('d') ^ ord('n')
-    flipped[16 + 6] ^= ord('=') ^ ord('=')
-    flipped[16 + 7] ^= ord('4') ^ ord('t')
-    flipped[16 + 8] ^= ord('5') ^ ord('r')
-    flipped[16 + 9] ^= ord('6') ^ ord('u')
-    flipped[16 + 10] ^= ord(';') ^ ord('e')
-    flipped[16 + 11] ^= ord('u') ^ ord(';')
-    return bytes(flipped)
 
 if __name__ == '__main__':
-    #     user_input = input()
-    #     submit(user_input)
-    user_data = "You're the man now, dog"
+    # padding so that our tampering allows us to just change 1 block
+    user_data = "      @admin$true*"
     ciphertext = submit(user_data)
     print("ciphertext:", ciphertext)
     is_admin = verify(ciphertext)
 
     # should be false
     print("Is admin:", is_admin)
-    tampered_ciphertext = bitflip_attack(ciphertext)
+
+    # target locations: 32, 38, 43
+    # tampering locations in ctxt : 16, 22, 27
+    one = ord('@') ^ ord(';')
+    two = ord('$') ^ ord('=')
+    three = ord('*') ^ ord(';')
+
+    tampered_ciphertext = bytearray(ciphertext)
+    tampered_ciphertext[16] ^= one
+    tampered_ciphertext[22] ^= two
+    tampered_ciphertext[27] ^= three
+
+    print("tampered ciphertext: ", tampered_ciphertext)
 
     is_admin_after_attack = verify(tampered_ciphertext)
     # should be true
     print("Is admin (after attack):", is_admin_after_attack)
-
